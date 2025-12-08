@@ -1,0 +1,4 @@
+[
+  {"nome": "Apostila Python", "descricao": "Edição 2025", "preco_venda": 89.90, "estoque_atual": 60},
+  {"nome": "Kit Laboratório", "descricao": "Materiais práticos", "preco_venda": 149.90, "estoque_atual": 20}
+]

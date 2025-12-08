@@ -1,0 +1,4 @@
+[
+  {"nome": "Python Básico", "descricao": "Atualizado", "carga_horaria": 45, "preco_padrao": 519.90},
+  {"nome": "Data Science", "descricao": "Novo curso", "carga_horaria": 80, "preco_padrao": 999.00}
+]

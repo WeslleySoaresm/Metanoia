@@ -227,3 +227,84 @@ def execute_join_query(queries, join_type, engine):
         except NameError:
              print(f"Erro ao buscar dados com o JOIN '{join_type}': {e}")
         return None
+    
+    
+    
+def upsert_table_data(table_name, data):
+    """Upsert data into the specified table.
+        
+        table : upsert into table_name
+        data : list of dictionaries representing rows to be upserted
+    """
+    try:
+        df = pd.DataFrame(data)
+        df.to_sql(table_name, engine, if_exists='append', index=False)
+        print(f"Data upserted successfully into table {table_name}.")
+    except Exception as e:
+        print(tabulate([[f"Error upserting data into table {table_name}: {e}"]], tablefmt="psql"))
+        
+        
+        
+        
+def deletar_aluno_e_dependencias(engine, ids_alunos: list):
+    """
+    Deleta alunos e suas dependências (venda, pagamento, inscrição, etc.) na ordem correta, 
+    garantindo a integridade referencial.
+    """
+    
+    # --- Passo Pré-Exclusão: Encontrar IDs de Vendas (NECESSÁRIO para deletar item_venda) ---
+    # É necessário obter os IDs das vendas que pertencem aos alunos antes de deletá-las
+    sql_select_venda_ids = text("SELECT id_venda FROM academico.venda WHERE xid_aluno = ANY(:ids);")
+    
+    # --- Funções de Exclusão (Da ponta para a raiz) ---
+    
+    # 1. DELETE: Tabela 'item_venda' (Neto)
+    # ATENÇÃO: Esta exclusão usa a lista de id_venda, não o id_aluno diretamente!
+    sql_delete_item_venda = text("DELETE FROM academico.item_venda WHERE xid_venda = ANY(:venda_ids);")
+    
+    # 2. DELETE: Tabela 'pagamento'
+    sql_delete_pagamento = text("DELETE FROM academico.pagamento WHERE xid_aluno = ANY(:ids);")
+    
+    # 3. DELETE: Tabela 'inscricao'
+    sql_delete_inscricao = text("DELETE FROM academico.inscricao WHERE xid_aluno = ANY(:ids);")
+    
+    # 4. DELETE: Tabela 'curso_aluno'
+    sql_delete_curso_aluno = text("DELETE FROM academico.curso_aluno WHERE xid_aluno = ANY(:ids);")
+    
+    # 5. DELETE: Tabela 'venda' (Pai de item_venda)
+    sql_delete_venda = text("DELETE FROM academico.venda WHERE xid_aluno = ANY(:ids);")
+    
+    # 6. DELETE: Tabela 'aluno' (O Pai principal)
+    sql_delete_aluno = text("DELETE FROM academico.aluno WHERE id_aluno = ANY(:ids);")
+    
+    # NOVO DELETE: Tabela 'tarefa_escolar'
+    sql_delete_tarefa = text("DELETE FROM academico.tarefa_escolar WHERE xid_aluno = ANY(:ids);")
+
+    try:
+        with engine.begin() as conn:
+            
+            # A) Obter IDs das vendas associadas
+            venda_ids_result = conn.execute(sql_select_venda_ids, {"ids": ids_alunos}).scalars().all()
+            
+            if venda_ids_result:
+                # B) Excluir itens de venda antes de excluir as vendas
+                conn.execute(sql_delete_item_venda, {"venda_ids": venda_ids_result})
+            
+            # C) Excluir as outras dependências na ordem correta
+            conn.execute(sql_delete_pagamento, {"ids": ids_alunos})
+            conn.execute(sql_delete_inscricao, {"ids": ids_alunos})
+            conn.execute(sql_delete_curso_aluno, {"ids": ids_alunos})
+            
+            # D) Excluir as vendas (agora que item_venda está limpa)
+            conn.execute(sql_delete_venda, {"ids": ids_alunos})
+            conn.execute(sql_delete_tarefa, {"ids": ids_alunos})
+            
+            # E) Excluir o aluno (agora que todas as dependências foram removidas)
+            result_a = conn.execute(sql_delete_aluno, {"ids": ids_alunos})
+            
+
+        print("--- Exclusão de Alunos Concluída ---")
+        print(f"✅ Total de alunos deletados: {result_a.rowcount} linhas.")
+
+    except Exception as e:
+        print(f"❌ ERRO GRAVE. Transação desfeita (ROLLBACK): {e}")

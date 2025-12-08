@@ -1,51 +1,20 @@
+from anyio import Path
 import pandas as pd
-
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from tabulate import tabulate
 from db.config import *
-from run_queries_dicts import queries_dicts
-from run_queries_lists import queries_lists, to_lists
-from run_queries_from import fetch_table_data, queries_dicts_type, select_all_from
+from db.run_queries import deletar_aluno_e_dependencias, fetch_table_data, queries_dicts_type, select_all_from, execute_join_query
 import json
+
+from db.upsert import *
 
 
 
 #conectando ao banco de dados
 engine = get_db_engine(db_config)
 
-# Executando consultas e exibindo resultados
-
-"""#consultas como dicionários
-queries_dicts = queries_dicts()
-with engine.connect() as conn:
-        for label, q in queries_dicts.items():
-            result = conn.execute(q)
-            rows = result.fetchall()
-            keys = result.keys()
-            dicts = [dict(zip(keys, row)) for row in rows]
-            print(f"\n=== {label.upper()} JOIN (dicionários) ===")
-            print(tabulate(dicts, headers="keys", tablefmt="psql"))"""
-           
-"""#consultas como listas
-queries_lists = queries_lists()
-with engine.connect() as conn:
-        for label, q in queries_lists.items():
-            result = conn.execute(q)
-            rows = result.fetchall()
-            lists = to_lists(rows)
-            print(f"\n=== {label.upper()} JOIN (listas) ===")
-            print(tabulate(lists, headers=["Aluno", "Curso", "Turma"], tablefmt="psql"))
-
-#consultas SELECT e UNION ALL
-queries_select = queries_select()
-with engine.connect() as conn:
-        for label, q in queries_select.items():
-            result = conn.execute(q)
-            rows = result.fetchall()
-            lists = to_lists(rows)
-            print(f"\n=== {label.upper()} CONTAGEM ===")
-            print(tabulate(lists, headers=["Tabela", "Contagem"], tablefmt="psql"))"""
+print("=== CONSULTAS DAS TABELAS (DataFrame) ===")
             
 #consultas para buscar dados das tabelas
 print(tabulate(fetch_table_data('academico.aluno'), headers="keys", tablefmt="psql"))  # nome da tabela a ser buscada
@@ -77,3 +46,36 @@ print(tabulate(df_right, headers="keys", tablefmt="psql"))
 df_select = select_all_from()
 print("\n--- SELECT ALL FROM ---")
 print(tabulate(df_select, headers="keys", tablefmt="psql"))
+
+
+# --- 1. Preparação dos Dados ---
+base = Path(__file__).parent.parent / "json"
+    
+    # Carrega dados dos arquivos JSON
+try:
+        cursos = load_json(base / "/Users/weslleysoares/Metanoia/curso_upsert.json")
+        materiais = load_json(base / "/Users/weslleysoares/Metanoia/material_upsert.json")
+        delete = load_json(base / "/Users/weslleysoares/Metanoia/material_delete.json")
+except FileNotFoundError as e:
+        print(f"Erro: Arquivo JSON não encontrado. Verifique o caminho. {e}")
+        exit()
+except Exception as e:
+        print(f"Erro ao carregar JSON: {e}")
+        exit()
+
+    # --- 2. Execução dos UPSERTs ---
+    
+    # Executa o UPSERT para Cursos, usando 'nome' como coluna de conflito.
+upsert_data(engine, curso, cursos, "nome")
+    
+    # Executa o UPSERT para Materiais, usando 'nome' como coluna de conflito.
+upsert_data(engine, material, materiais, "nome")
+
+    # --- 3. Execução dos DELETEs ---
+
+Alunos = fetch_table_data('academico.aluno')
+print("\n=== Tabela Aluno Antes da Exclusão ===")
+print(tabulate(Alunos, headers="keys", tablefmt="psql"))    
+lista_ids_de_alunos = input(f"Digite o Ids dos alunos a serem deletados, separados por vírgula: ") # IDs dos alunos a serem deletados    
+lista_ids_de_alunos = [int(id.strip()) for id in lista_ids_de_alunos.split(",")] # Converte a entrada em uma lista de inteiros
+deletar_aluno_e_dependencias(engine, lista_ids_de_alunos)
