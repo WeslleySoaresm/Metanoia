@@ -5,13 +5,37 @@ from db.config import get_db_engine, db_config
 from db.run_queries import fetch_table_data, deletar_aluno_e_dependencias
 from db.upsert import upsert_data, curso, material
 
+# --- Configuração da página ---
+st.set_page_config(
+    page_title="Metanoia - Painel Acadêmico",
+    page_icon="img/metanoia.ico",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'About': "Este painel foi desenvolvido para gerenciar as operações acadêmicas da Escola Metanoia.",
+        'Get Help': 'https://metanoia.com/help',
+        'Report a bug': "https://metanoia.com/bug-report",
+    }
+)   
+
+
+
 # Conexão
 engine = get_db_engine(db_config)
+ #-- login --
+ 
+ 
+ 
+ 
 
 st.title("📚 Escola Metanoia - Painel Acadêmico")
 
 # --- Menu lateral ---
-menu = st.sidebar.radio("Navegação", ["Consultas", "Cadastrar Curso", "Cadastrar Material", "Cadastrar Tarefa Escolar", "Deletar Aluno"])
+menu = st.sidebar.selectbox("Navegação", ["Consultas", "Cadastrar Curso", "Vídeos Aulas", "Cadastrar Material", "Cadastrar Tarefa Escolar", "Deletar Aluno", "Sobre", "Ajuda"])
+
+
+# - videos aulas--
+
 
 # --- Consultas ---
 if menu == "Consultas":
@@ -22,6 +46,7 @@ if menu == "Consultas":
     escolha = st.selectbox("Escolha a tabela:", tabelas)
     df = pd.DataFrame(fetch_table_data(escolha))
     st.dataframe(df)
+    
 
 # --- Cadastro de Curso ---
 elif menu == "Cadastrar Curso":
@@ -83,5 +108,85 @@ elif menu == "Deletar Aluno":
     ids = st.text_input("Digite os IDs dos alunos a serem deletados (separados por vírgula)")
     if st.button("Deletar"):
         lista_ids = [int(x.strip()) for x in ids.split(",") if x.strip().isdigit()]
-        deletar_aluno_e_dependencias(engine, lista_ids)
-        st.success(f"Alunos {lista_ids} deletados com sucesso!")
+
+        # IDs que existem no banco
+        ids_existentes = df["id_aluno"].tolist()
+
+        # IDs inválidos (não encontrados)
+        ids_invalidos = [i for i in lista_ids if i not in ids_existentes]
+
+        if ids_invalidos:
+            st.error(f"Os seguintes IDs não existem na tabela de alunos: {ids_invalidos}")
+        else:
+            deletar_aluno_e_dependencias(engine, lista_ids)
+            st.success(f"✅ Alunos {lista_ids} deletados com sucesso!")
+
+# --- Vídeos Aulas ---
+elif menu == "Vídeos Aulas":
+    st.header("🎥 Vídeos Aulas")
+    st.markdown("""
+    Aqui você pode acessar vídeos aulas relacionados ao conteúdo acadêmico.
+    
+    **Em breve mais conteúdos serão adicionados!**
+    """
+    )
+    aulas_tema = st.sidebar.selectbox("Selecione Disciplina", ["Bibliologia", "Pentateuco", "Teontologia"])
+    
+    if aulas_tema == "Bibliologia":
+        st.subheader("📚 Bibliologia")
+        st.markdown("Vídeo aula sobre os livros da Bíblia e sua importância.")
+        st.write("Assista Aulas AO VIVO  [aqui](https://metanoia.com/aulas-ao-vivo)")
+        
+        
+        link_video_1 = "https://drive.google.com/file/d/10R9qGZzA6L2QqBiN_koUaO3e2pSQYaIe/view?usp=drive_link"
+        st.write("Assista ao vídeo aula clicando [aqui](%s)" % link_video_1)
+        
+        
+
+   
+        
+#--- Sobre ---
+elif menu == "Sobre":
+    st.header("ℹ️ Sobre o Painel Acadêmico")
+    st.markdown("""
+    Este painel foi desenvolvido para gerenciar as operações acadêmicas da Escola Metanoia.
+    
+    **Funcionalidades:**
+    - Consultar dados das tabelas acadêmicas.
+    - Cadastrar e atualizar cursos e materiais.
+    - Inserir tarefas escolares para os alunos.
+    - Deletar alunos e suas dependências no sistema.
+    
+    **Tecnologias Utilizadas:**
+    - Streamlit para a interface web.
+    - SQLAlchemy para interação com o banco de dados.
+    
+    Desenvolvido por Weslley Soares.
+    """)
+    
+# --- Ajuda ---
+elif menu == "Ajuda":
+    st.header("❓ Ajuda")
+    st.markdown("""
+    **Como usar o Painel Acadêmico:**
+    
+    1. **Consultas:** Selecione uma tabela para visualizar seus dados.
+    2. **Cadastrar Curso/Material:** Preencha os campos e clique em "Salvar" para inserir ou atualizar registros.
+    3. **Cadastrar Tarefa Escolar:** Forneça os detalhes da tarefa e clique em "Salvar Tarefa".
+    4. **Deletar Aluno:** Insira os IDs dos alunos a serem deletados e clique em "Deletar".
+    
+    Para mais informações, entre em contato com o suporte técnico.
+    """)
+
+
+
+
+# -- Rodapé --  
+    
+ 
+st.sidebar.markdown("---")
+st.sidebar.markdown("© 2024 Escola Metanoia")    
+# --- Fim do arquivo app.py ---
+
+import streamlit as st
+

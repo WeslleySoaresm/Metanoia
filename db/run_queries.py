@@ -302,9 +302,11 @@ def deletar_aluno_e_dependencias(engine, ids_alunos: list):
             # E) Excluir o aluno (agora que todas as dependências foram removidas)
             result_a = conn.execute(sql_delete_aluno, {"ids": ids_alunos})
             
-
-        print("--- Exclusão de Alunos Concluída ---")
-        print(f"✅ Total de alunos deletados: {result_a.rowcount} linhas.")
+            if not result_a.rowcount:
+                print("⚠️ Aviso: Nenhum aluno foi deletado. Verifique os IDs fornecidos.")
+            else:  
+                print("--- Exclusão de Alunos Concluída ---")
+                print(f"✅ Total de alunos deletados: {result_a.rowcount} linhas.")
 
     except Exception as e:
         print(f"❌ ERRO GRAVE. Transação desfeita (ROLLBACK): {e}")
