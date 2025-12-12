@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from tabulate import tabulate
 from db.config import *
-from db.run_queries import deletar_aluno_e_dependencias, fetch_table_data, queries_dicts_type, select_all_from, execute_join_query
+from db.run_queries import deletar_aluno_e_dependencias, fetch_table_data, queries_dicts_type, select_all_from, execute_join_query,
 import json
 
 from db.upsert import *

@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 from db.config import get_db_engine, db_config
-from db.run_queries import fetch_table_data, deletar_aluno_e_dependencias
-from db.upsert import upsert_data, curso, material
+from db.run_queries import fetch_table_data, deletar_aluno_e_dependencias, upsert_table_data
+from db.upsert import *
+
 
 # --- Configuração da página ---
 st.set_page_config(
+    
     page_title="Metanoia - Painel Acadêmico",
     page_icon="img/metanoia.ico",
     layout="wide",
@@ -20,7 +22,7 @@ st.set_page_config(
 
 
 
-# Conexão
+#Conexão
 engine = get_db_engine(db_config)
  #-- login --
  
@@ -31,7 +33,7 @@ engine = get_db_engine(db_config)
 st.title("📚 Escola Metanoia - Painel Acadêmico")
 
 # --- Menu lateral ---
-menu = st.sidebar.selectbox("Navegação", ["Consultas", "Cadastrar Curso", "Vídeos Aulas", "Cadastrar Material", "Cadastrar Tarefa Escolar", "Deletar Aluno", "Sobre", "Ajuda"])
+menu = st.sidebar.selectbox("Navegação", ["Cadastrar Aluno", "Consultas",  "Cadastrar Curso", "Cadastrar Usuário", "Vídeos Aulas", "Cadastrar Material", "Cadastrar Tarefa Escolar", "Deletar Aluno", "Sobre", "Ajuda"])
 
 
 # - videos aulas--
@@ -40,13 +42,47 @@ menu = st.sidebar.selectbox("Navegação", ["Consultas", "Cadastrar Curso", "Ví
 # --- Consultas ---
 if menu == "Consultas":
     st.header("📊 Consultas das Tabelas")
-    tabelas = ["academico.aluno", "academico.curso", "academico.turma", "academico.inscricao",
-               "academico.material", "academico.venda", "academico.item_venda", "academico.pagamento"]
+    
+    lista_academico = ["academico.aluno", "academico.curso", "academico.turma", "academico.inscricao",
+               "academico.material", "academico.venda", "academico.item_venda", "academico.pagamento",
+               "academico.usuario",
+               "academico.tarefa_escolar",
+               "academico.curso_aluno",
+                "academico.professor",
+                "academico.funcionario",
+                "academico.professor_disciplina",
+                "academico.tarefa_auxiliar",
+                "academico.material",
+                "academico.turma"
+    ]
+    tabelas = [ 
+               
+               lista_academico[i] for i in range(len(lista_academico)) 
+               
+               ]
 
     escolha = st.selectbox("Escolha a tabela:", tabelas)
     df = pd.DataFrame(fetch_table_data(escolha))
     st.dataframe(df)
+# cadastrar aluno
+elif menu == "Cadastrar Aluno":
+    st.header("➕ Cadastrar Aluno")
+    id_aluno = st.number_input("ID do Aluno (deixe 0 para novo)", min_value=0, value=0)
+    nome_completo = st.text_input("Nome do Aluno")
+    senha = st.text_input("Senha", type="password")
+    role = "aluno"  # Perfil fixo para aluno
+    email = st.text_input("Email do Aluno")
+    telefone = st.text_input("Telefone do Aluno")
+    data_nascimento = st.text_input("Data de Nascimento (DD/MM/AAAA)")
+    status_ativo = st.selectbox("Status do Aluno", ["Ativo", "Inativo"])
+    data_cadastro = st.text_input("Data de Cadastro (DD/MM/AAAA)")
     
+
+    if st.button("Salvar Aluno"):
+        dados_aluno = {"id_aluno": None, "nome_completo": nome_completo, "email": email, "telefone": telefone, "data_nascimento": data_nascimento, "status_ativo": True if status_ativo == "Ativo" else False, "data_cadastro": data_cadastro}
+        dados_usuario = {"nome": nome_completo, "email": email, "senha": senha, "role": "aluno"}  # Ajuste conforme necessário
+        create_aluno_e_usuario(engine, dados_aluno, dados_usuario)
+        st.success("Aluno inserido/atualizado com sucesso!")    
 
 # --- Cadastro de Curso ---
 elif menu == "Cadastrar Curso":
@@ -121,6 +157,24 @@ elif menu == "Deletar Aluno":
             deletar_aluno_e_dependencias(engine, lista_ids)
             st.success(f"✅ Alunos {lista_ids} deletados com sucesso!")
 
+#  cadastrar usuario
+elif menu == "Cadastrar Usuário":
+    st.header("➕ Cadastrar Usuário")
+    username = st.text_input("Nome de usuário")
+    senha = st.text_input("Senha", type="password")
+    role = st.selectbox("Função", ["Admin", "Professor", "Aluno", "Funcionário"])
+    email = st.text_input("Email")
+    id_aluno = st.number_input("ID do Aluno (se aplicável)", min_value=0, value=0)
+    id_professor = st.number_input("ID do Professor (se aplicável)", min_value=0, value=0)
+
+    if st.button("Salvar Usuário"):
+        senha_hash = hash(senha)  # Exemplo simples de hash, use uma função de hash segura na prática
+        dados = [{"nome": username, "senha": senha, "role": role, "email": email, "id_aluno": id_aluno if id_aluno > 0 else None, "id_professor": id_professor if id_professor > 0 else None}]
+        criar_usuarios_completos(engine, dados, dados, dados)
+        st.success("Usuário inserido/atualizado com sucesso!")   
+
+
+
 # --- Vídeos Aulas ---
 elif menu == "Vídeos Aulas":
     st.header("🎥 Vídeos Aulas")
@@ -135,14 +189,31 @@ elif menu == "Vídeos Aulas":
     if aulas_tema == "Bibliologia":
         st.subheader("📚 Bibliologia")
         st.markdown("Vídeo aula sobre os livros da Bíblia e sua importância.")
-        st.write("Assista Aulas AO VIVO  [aqui](https://metanoia.com/aulas-ao-vivo)")
         
+        menu = "Vídeos Aulas"
+        AO_VIVO = "https://metanoia.com/aulas-ao-vivo"
+        AULAS_GRAVADAS = "https://metanoia.com/aulas-gravadas"
+        button_ao_vivo = st.button("Assistir Aula AO VIVO")
+        button_voltar =  "Vídeos Aulas"
+        button_aulas_gravadas = st.button("Assistir Aula AULAS GRAVADAS")
         
-        link_video_1 = "https://drive.google.com/file/d/10R9qGZzA6L2QqBiN_koUaO3e2pSQYaIe/view?usp=drive_link"
-        st.write("Assista ao vídeo aula clicando [aqui](%s)" % link_video_1)
-        
-        
-
+        if button_ao_vivo:
+            
+            link_video_1 = "https://drive.google.com/file/d/1z1Yk2bXKJfX1Z4nU5r8q3F5G7H6I9J0K/view?usp=drive_link"
+            st.header("Assista Aula AO VIVO ")
+            st.markdown(f"[Clique aqui para assistir ao vivo]({link_video_1})")
+            
+            if  st.button(f"Voltar"):
+                    menu = "Vídeos Aulas"          
+        elif button_aulas_gravadas:
+            
+            link_video_1 = "https://drive.google.com/file/d/10R9qGZzA6L2QqBiN_koUaO3e2pSQYaIe/view?usp=drive_link"
+            st.header("Assista Aula Gravada")
+            st.markdown(f"[AULA 2]({link_video_1})")
+            
+            if  st.button(f"Voltar"):
+                    menu = "Vídeos Aulas"
+                    
    
         
 #--- Sobre ---
@@ -188,5 +259,5 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("© 2024 Escola Metanoia")    
 # --- Fim do arquivo app.py ---
 
-import streamlit as st
+
 

@@ -20,7 +20,6 @@ def fetch_table_data(table_name):
     except Exception as e:
         print(tabulate([[f"Error fetching data from table {table_name}: {e}"]], tablefmt="psql"))
         return None
-    
 # Função para consultas SELECT e UNION ALL
 def select_all_from():
     """
@@ -61,6 +60,10 @@ def select_all_from():
                 - venda
                 - item_venda
                 - pagamento
+                - usuario
+                - tarefa_escolar
+                - curso_aluno       
+            
 """
     try:
         query = f"""SELECT 'aluno' AS tabela, COUNT(*) FROM academico.aluno
@@ -71,6 +74,18 @@ def select_all_from():
                         UNION ALL SELECT 'venda', COUNT(*) FROM academico.venda
                         UNION ALL SELECT 'item_venda', COUNT(*) FROM academico.item_venda
                         UNION ALL SELECT 'pagamento', COUNT(*) FROM academico.pagamento;
+                        union all select 'usuario', count(*) from academico.usuario;
+                        union all select 'tarefa_escolar', count(*) from academico.tarefa_escolar;
+                        union all select 'curso_aluno', count(*) from academico.curso_aluno;
+                        union all select 'material', count(*) from academico.material;  
+                        union all select 'professor', count(*) from academico.professor;
+                        union all select 'funcionario', count(*) from academico.funcionario;
+                        union all select 'professor_disciplina', count(*) from academico.professor_disciplina;
+                        union all select 'tarefa_auxiliar', count(*) from academico.tarefa_auxiliar;
+                        union all select 'turma', count(*) from academico.turma;
+                        
+                        
+                        
                         """
         df = pd.read_sql(query, engine)
         print("select * from")
@@ -242,8 +257,7 @@ def upsert_table_data(table_name, data):
         print(f"Data upserted successfully into table {table_name}.")
     except Exception as e:
         print(tabulate([[f"Error upserting data into table {table_name}: {e}"]], tablefmt="psql"))
-        
-        
+               
         
         
 def deletar_aluno_e_dependencias(engine, ids_alunos: list):
