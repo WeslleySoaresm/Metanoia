@@ -1,3 +1,4 @@
+from sqlite3 import IntegrityError
 import streamlit as st
 import pandas as pd
 from sqlalchemy import text
@@ -33,17 +34,11 @@ engine = get_db_engine(db_config)
 st.title("📚 Escola Metanoia - Painel Acadêmico")
 
 # --- Menu lateral ---
-menu = st.sidebar.selectbox("Navegação", ["Cadastrar Aluno", "Consultas",  "Cadastrar Curso", "Cadastrar Usuário", "Vídeos Aulas", "Cadastrar Material", "Cadastrar Tarefa Escolar", "Deletar Aluno", "Sobre", "Ajuda"])
+menu = st.sidebar.selectbox("Navegação", ["Cadastrar Aluno", "Consultas",  "Cadastrar Curso", "Cadastrar Usuário", "Vídeos Aulas", "Cadastrar Material", "Cadastrar Tarefa Escolar", "Deletar Usuario", "Sobre", "Ajuda"])
 
 
 # - videos aulas--
-
-
-# --- Consultas ---
-if menu == "Consultas":
-    st.header("📊 Consultas das Tabelas")
-    
-    lista_academico = ["academico.aluno", "academico.curso", "academico.turma", "academico.inscricao",
+lista_academico = ["academico.aluno", "academico.curso", "academico.turma", "academico.inscricao",
                "academico.material", "academico.venda", "academico.item_venda", "academico.pagamento",
                "academico.usuario",
                "academico.tarefa_escolar",
@@ -55,15 +50,20 @@ if menu == "Consultas":
                 "academico.material",
                 "academico.turma"
     ]
-    tabelas = [ 
+tabelas = [ 
                
                lista_academico[i] for i in range(len(lista_academico)) 
                
                ]
-
+# --- Consultas ---
+if menu == "Consultas":
+    st.header("📊 Consultas das Tabelas")
     escolha = st.selectbox("Escolha a tabela:", tabelas)
     df = pd.DataFrame(fetch_table_data(escolha))
     st.dataframe(df)
+    
+    
+    
 # cadastrar aluno
 elif menu == "Cadastrar Aluno":
     st.header("➕ Cadastrar Aluno")
@@ -135,44 +135,171 @@ elif menu == "Cadastrar Tarefa Escolar":
             })
         st.success("Tarefa escolar cadastrada com sucesso!")
 
-# --- Deletar Aluno ---
-elif menu == "Deletar Aluno":
-    st.header("❌ Deletar Aluno e Dependências")
-    df = pd.DataFrame(fetch_table_data("academico.aluno"))
+# ...existing code...
+
+# --- Deletar Usuario ---
+elif menu == "Deletar Usuario":
+    st.header("❌ Deletar Registros de Tabela")
+    escolha = st.selectbox("Escolha a tabela:", tabelas)
+
+    # Busca dados da tabela
+    dados = fetch_table_data(escolha)
+    df = pd.DataFrame(dados)
+
+    # Mostra tabela
     st.dataframe(df)
 
-    ids = st.text_input("Digite os IDs dos alunos a serem deletados (separados por vírgula)")
+    # Campo para digitar IDs
+    ids = st.text_input(
+        "Digite os IDs a serem deletados (separados por vírgula)",
+        placeholder="Ex: 1, 3, 5"
+    )
+
+    # Confirmação adicional para evitar acidentes
+    confirmacao = st.checkbox("Confirme que deseja deletar os registros selecionados (irreversível)")
+
     if st.button("Deletar"):
-        lista_ids = [int(x.strip()) for x in ids.split(",") if x.strip().isdigit()]
+        if not confirmacao:
+            st.warning("⚠️ Marque a confirmação para prosseguir.")
+            st.stop()
 
-        # IDs que existem no banco
-        ids_existentes = df["id_aluno"].tolist()
+        try:
+            # Converte entrada em lista de inteiros
+            lista_ids = [
+                int(x.strip())
+                for x in ids.split(",")
+                if x.strip().isdigit()
+            ]
 
-        # IDs inválidos (não encontrados)
-        ids_invalidos = [i for i in lista_ids if i not in ids_existentes]
+            if not lista_ids:
+                st.warning("⚠️ Informe pelo menos um ID válido.")
+                st.stop()
 
-        if ids_invalidos:
-            st.error(f"Os seguintes IDs não existem na tabela de alunos: {ids_invalidos}")
-        else:
-            deletar_aluno_e_dependencias(engine, lista_ids)
-            st.success(f"✅ Alunos {lista_ids} deletados com sucesso!")
+            # Assume coluna 'id' como chave; ajuste se necessário (ex.: df.columns[0] para primeira coluna)
+            if 'id' not in df.columns:
+                st.error("❌ Tabela não possui coluna 'id'. Ajuste o código para a chave primária correta.")
+                st.stop()
+
+            ids_existentes = df["id"].tolist()
+
+            # IDs que não existem
+            ids_invalidos = [i for i in lista_ids if i not in ids_existentes]
+
+            if ids_invalidos:
+                st.error(
+                    f"❌ Os seguintes IDs não existem na tabela {escolha}: {ids_invalidos}"
+                )
+            else:
+                # Deleta via SQL DELETE (sem cascata; risco assumido)
+                with engine.begin() as conn:
+                    placeholders = ', '.join([':id' + str(i) for i in range(len(lista_ids))])
+                    query = f"DELETE FROM {escolha} WHERE id IN ({placeholders})"
+                    params = {f'id{i}': lista_ids[i] for i in range(len(lista_ids))}
+                    conn.execute(text(query), params)
+
+                st.success(
+                    f"✅ Registros {lista_ids} deletados da tabela {escolha} com sucesso!"
+                )
+    
+        except Exception as e:
+            st.error("❌ Erro ao deletar registros. Verifique integridade e tente novamente.")
+            st.exception(e)  # Descomente para debug, mas remova em prod
+
+# ...existing code...
 
 #  cadastrar usuario
 elif menu == "Cadastrar Usuário":
     st.header("➕ Cadastrar Usuário")
-    username = st.text_input("Nome de usuário")
-    senha = st.text_input("Senha", type="password")
     role = st.selectbox("Função", ["Admin", "Professor", "Aluno", "Funcionário"])
-    email = st.text_input("Email")
-    id_aluno = st.number_input("ID do Aluno (se aplicável)", min_value=0, value=0)
-    id_professor = st.number_input("ID do Professor (se aplicável)", min_value=0, value=0)
+    if role == "Aluno":
+        id_aluno = st.number_input("ID do Aluno (se aplicável)", min_value=0, value=0)
+        nome_completo = st.text_input("Nome Completo do Aluno")
+        email = st.text_input("Email do Aluno")
+        telefone = st.text_input("Telefone do Aluno")
+        data_nascimento = st.text_input("Data de Nascimento (DD/MM/AAAA)")
+        status_ativo = st.selectbox("Status do Aluno", ["Ativo", "Inativo"])
+        data_cadastro = st.text_input("Data de Cadastro (DD/MM/AAAA)")
+    elif role == "Professor":
+        id_professor = st.number_input("ID do Professor (se aplicável)", min_value=0, value=0)
+        nome = st.text_input("Nome Completo do Professor")
+        email = st.text_input("Email do Professor")
+        telefone = st.text_input("Telefone do Professor")
+        especialidade = st.text_input("Especialidade do Professor")
+        data_contratacao = st.text_input("Data de Contratação (DD/MM/AAAA)")
+        senha = st.text_input("Senha", type="password")
+    elif role in ["Admin", "Funcionário"]:
+        if role == "Funcionário":
+            id_funcionario = st.number_input("ID do Funcionário (se aplicável)", min_value=0, value=0) 
+            nome = st.text_input("Nome Completo do Funcionário") 
+            cargo = st.text_input("Cargo do Funcionário")
+            email = st.text_input("Email do Funcionário")
+            senha = st.text_input("Senha", type="password")
+        else:  # Admin
+            nome = st.text_input("Nome Completo")
+            email = st.text_input("Email")
+            telefone = st.text_input("Telefone")
+            senha = st.text_input("Senha", type="password")
+            
 
     if st.button("Salvar Usuário"):
         senha_hash = hash(senha)  # Exemplo simples de hash, use uma função de hash segura na prática
-        dados = [{"nome": username, "senha": senha, "role": role, "email": email, "id_aluno": id_aluno if id_aluno > 0 else None, "id_professor": id_professor if id_professor > 0 else None}]
-        criar_usuarios_completos(engine, dados, dados, dados)
-        st.success("Usuário inserido/atualizado com sucesso!")   
+         # Monta o usuário básico
+        usuario_base = {
+            "nome": nome,
+            "email": email,
+            "senha": senha,
+            "role": role
+        }      
+        alunos_a_ser_inseridos = []
+        professores_a_ser_inseridos = []
+        funcionarios_a_ser_inseridos = []      
+        # Decide o tipo de cadastro
+        if role == "Aluno":
+            alunos_a_ser_inseridos.append({
+                "id_aluno": id_aluno if id_aluno != 0 else None,
+                "nome_completo": username,
+                "email": email,
+                "telefone": telefone,
+                "data_nascimento": "01/01/2000",  # se não existir no formulário
+                "status_ativo": status_ativo == "Ativo",
+                "data_cadastro": data_contratacao if data_contratacao else "01/01/2025"
+            })
 
+        elif role == "Professor":
+            professores_a_ser_inseridos.append({
+                "id_professor": id_professor if id_professor != 0 else None,
+                "nome": username,
+                "email": email,
+                "telefone": telefone,
+                "especialidade": especialidade,
+                "data_contratacao": data_contratacao if data_contratacao else "01/01/2025"
+            })
+
+        else:  # Admin ou Funcionário
+            funcionarios_a_ser_inseridos.append({
+                "id_funcionario": None,
+                "nome": nome,
+                "cargo": cargo,
+                "email": email,
+                
+            })
+
+        try:
+            # Chama corretamente a função de criação/upsert
+            criar_usuarios_completos(engine, alunos_a_ser_inseridos, professores_a_ser_inseridos, funcionarios_a_ser_inseridos)
+            upsert_data(engine, aluno, alunos_a_ser_inseridos, "id_aluno")
+            upsert_data(engine, professor, professores_a_ser_inseridos, "id_professor")
+            upsert_data(engine, funcionario, funcionarios_a_ser_inseridos, "email")
+            
+            # Se chegar até aqui sem erro
+            st.success("✅ Usuário inserido/atualizado com sucesso!")
+
+        except IntegrityError as e:
+            # Caso haja violação de UNIQUE ou outro erro de integridade
+            st.error("❌ Email duplicado ou dado inválido. Verifique e tente novamente.")
+        except Exception as e:
+            # Qualquer outro erro inesperado
+            st.error(f"❌ Ocorreu um erro inesperado: {str(e)}")
 
 
 # --- Vídeos Aulas ---
