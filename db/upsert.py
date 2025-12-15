@@ -1,8 +1,10 @@
 import json
-
+# importe utils de senha
+from utils.security import is_probably_bcrypt_hash, hash_password
 from sqlalchemy import Table, Column, Integer, String, Text, SmallInteger, Numeric, MetaData, text, delete, Boolean
 from sqlalchemy.dialects.postgresql import insert
 import sqlalchemy as sa
+from datetime import datetime, date
 
 # e depois referencie sa.Column, sa.Integer etc
 
@@ -169,223 +171,204 @@ def load_json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def upsert_data(engine, table, data_records, conflict_column):
+def upsert_data(engine, schema_table, rows, pk_field="id", conflict_target="email"):
     """
-    Executa uma operação UPSERT (ON CONFLICT DO UPDATE) em uma tabela.
-    Executa UPSERT genérico para qualquer tabela.
-    Args:
-        engine: Objeto de conexão SQLAlchemy Engine.
-        table (Table): Objeto de tabela SQLAlchemy (ex: curso, material).
-        data_records (list): Lista de dicionários com os dados a serem inseridos/atualizados.
-        conflict_column (str): Nome da coluna usada para identificar conflitos (ex: 'nome').
-        Remove PK se vier None
-        Usa coluna de conflito definida no argumento
+    Upsert rows into schema.table.
+    - schema_table: tuple (schema, table_name) or SQLAlchemy Table-like with .name/.schema
+    - rows: list[dict]
+    - pk_field: primary key field name (default "id")
+    - conflict_target: unique column to use when id not provided (default "email")
+    Returns: mapping { email: id }
     """
-    if not data_records:
-        print(f"Aviso: Nenhuma linha para processar em '{table.name}'.")
-        return
+    if not rows:
+        return {}
 
-    try:
-        with engine.begin() as conn:
-            for record in data_records:
+    # resolve table name and schema
+    if hasattr(schema_table, "name"):
+        table_name = schema_table.name
+        schema = getattr(schema_table, "schema", None) or "academico"
+    else:
+        schema, table_name = schema_table
 
-                # Remove PK se vier None
-                cleaned_record = {
-                    col: val for col, val in record.items()
-                    if not (col in table.primary_key.columns.keys() and val is None)
-                }
+    full_table = f"{schema}.{table_name}"
+    mapping = {}
 
-                # Mapeia colunas para atualizar (exceto PK e coluna de conflito)
-                set_mapping = {
-                    col.name: insert(table).excluded.get(col.name)
-                    for col in table.columns
-                    if not col.primary_key and col.name != conflict_column
-                }
-
-                stmt = (
-                    insert(table)
-                    .values(**cleaned_record)
-                    .on_conflict_do_update(
-                        index_elements=[conflict_column],
-                        set_=set_mapping
-                    )
-                )
-
-                conn.execute(stmt)
-
-        print(f"✅ UPSERT concluído na tabela '{table.name}'")
-    except Exception as e:
-        print(f"❌ Erro ao executar UPSERT na tabela '{table.name}': {e}")
-
-
-def create_aluno_e_usuario(engine, aluno_data, usuario_data):
-    """
-    Cria um novo aluno e um usuário associado na mesma transação.
-    Se o usuário já existir (conflito na coluna 'email'), atualiza os dados do usuário.
-    
-    Args:
-        engine: SQLAlchemy Engine
-        aluno_data: dict com dados do aluno (nome_completo, email, telefone, data_nascimento, status_ativo)
-        usuario_data: dict com dados do usuário (nome, email, senha, role)
-    """
     with engine.begin() as conn:
-        
-        # Remove id_aluno se estiver presente
-        aluno_data = {k: v for k, v in aluno_data.items() if k != "id_aluno"}
-        # 1️⃣ Inserir o aluno e pegar o ID gerado
-        stmt_aluno = insert(aluno).values(**aluno_data).returning(aluno.c.id_aluno)
+        for row in rows:
+            payload = {k: v for k, v in row.items() if v is not None}  # omit None values
+            email = payload.get("email")
+            provided_id = row.get(pk_field)
+
+            # Build insert columns/values from payload keys (already filtered)
+            insert_keys = list(payload.keys())
+            insert_cols = ", ".join(insert_keys)
+            insert_vals = ", ".join(":" + k for k in insert_keys)
+
+            if provided_id:
+                # ensure pk_field present in payload
+                if pk_field not in insert_keys:
+                    insert_keys.append(pk_field)
+                    insert_cols = ", ".join(insert_keys)
+                    insert_vals = ", ".join(":" + k for k in insert_keys)
+                    payload[pk_field] = provided_id
+
+                set_clause = ", ".join(f"{k}=excluded.{k}" for k in insert_keys if k != pk_field)
+                sql = text(f"""
+                    INSERT INTO {full_table} ({insert_cols})
+                    VALUES ({insert_vals})
+                    ON CONFLICT ({pk_field}) DO UPDATE
+                    SET {set_clause}
+                    RETURNING {pk_field}
+                """)
+                res = conn.execute(sql, payload).scalar_one()
+                mapping[email] = res
+            else:
+                # id not provided: conflict on unique column (email)
+                set_clause = ", ".join(f"{k}=excluded.{k}" for k in insert_keys if k != conflict_target)
+                sql = text(f"""
+                    INSERT INTO {full_table} ({insert_cols})
+                    VALUES ({insert_vals})
+                    ON CONFLICT ({conflict_target}) DO UPDATE
+                    SET {set_clause}
+                    RETURNING {pk_field}
+                """)
+                res = conn.execute(sql, payload).scalar_one()
+                mapping[email] = res
+
+    return mapping
+
+
+
+def converter_data_para_iso(data_str, formato_entrada="%d/%m/%Y"):
+    if not data_str or data_str.strip() == "":
+        return None
+    try:
+        data_obj = datetime.strptime(data_str.strip(), formato_entrada)
+        return data_obj.strftime("%Y-%m-%d")
+    except ValueError:
+        raise ValueError(f"Formato de data inválido: {data_str}. Use DD/MM/YYYY")
+
+def create_aluno_e_usuario(engine, aluno_data, usuario_data, auto_hash: bool = False):
+    """
+    Cria aluno e usuário na mesma transação.
+    - Por padrão exige que usuario_data['senha'] seja um hash bcrypt.
+    - Se auto_hash=True, aceita senha em texto e gera o hash (uso apenas para migração controlada).
+    """
+    if "senha" not in usuario_data or not usuario_data["senha"]:
+        raise ValueError("usuario_data deve conter a chave 'senha' não vazia")
+
+    # Se auto_hash ativado, gere hash se necessário
+    if auto_hash:
+        if not is_probably_bcrypt_hash(usuario_data["senha"]):
+            usuario_data = usuario_data.copy()
+            usuario_data["senha"] = hash_password(usuario_data["senha"])
+    else:
+        # modo seguro: exigir hash já gerado
+        if not is_probably_bcrypt_hash(usuario_data["senha"]):
+            raise ValueError("create_aluno_e_usuario espera senha já hasheada com bcrypt. Use auto_hash=True apenas para migração.")
+
+    with engine.begin() as conn:
+        # Remove id se presente
+        aluno_data = {k: v for k, v in aluno_data.items() if k != "id"}
+
+        # Converter datas
+        if "data_nascimento" in aluno_data:
+            aluno_data["data_nascimento"] = converter_data_para_iso(aluno_data["data_nascimento"])
+        if "data_cadastro" in aluno_data:
+            aluno_data["data_cadastro"] = converter_data_para_iso(aluno_data["data_cadastro"])
+
+        # Inserir aluno
+        stmt_aluno = insert(aluno).values(**aluno_data).returning(aluno.c.id)
         result = conn.execute(stmt_aluno)
-        id_aluno = result.scalar()  # pega o id_aluno inserido
+        id_aluno = result.scalar()
 
-        # 2️⃣ Prepara os dados do usuário com o id_aluno correto
-        usuario_data = usuario_data.copy()  # evita modificar o dict original
-        usuario_data['id_aluno'] = id_aluno
+        # Preparar usuario
+        usuario_payload = usuario_data.copy()
+        usuario_payload["id_aluno"] = id_aluno
 
-        # 3️⃣ UPSERT do usuário baseado no email
+        # Construir set_mapping para upsert
         set_mapping = {
             col.name: insert(usuario).excluded.get(col.name)
             for col in usuario.columns
             if col.primary_key is False and col.name != 'email'
         }
 
-        stmt_usuario = insert(usuario).values(**usuario_data).on_conflict_do_update(
+        stmt_usuario = insert(usuario).values(**usuario_payload).on_conflict_do_update(
             index_elements=['email'],
             set_=set_mapping
         )
 
         conn.execute(stmt_usuario)
-
-        return id_aluno  # opcional, retorna o ID do aluno criado
-
+        return id_aluno
 
 
 
-
-
-
+def parse_date_br(value):
     """
-    Cria usuários do tipo Admin ou Professor no banco.
-    Atualiza o usuário se já existir (UPSERT baseado no email).
-
-    Args:
-        engine: SQLAlchemy Engine
-        usuarios_data: lista de dicts com dados dos usuários, cada dict deve ter:
-            - nome
-            - email
-            - senha
-            - role ('Admin' ou 'Professor')
-            - id_professor (opcional, só se for professor)
+    Converte datas no formato 'DD/MM/AAAA' para datetime.date.
+    Retorna None se a string estiver vazia, inválida ou None.
     """
+    if not value or not isinstance(value, str):
+        return None
+
+    value = value.strip()
+
+    # Aceita também 'AAAA-MM-DD' (caso venha do banco ou de outro fluxo)
+    try:
+        if "-" in value and len(value.split("-")[0]) == 4:
+            return datetime.strptime(value, "%Y-%m-%d").date()
+    except:
+        pass
+
+    # Formato padrão BR
+    try:
+        return datetime.strptime(value, "%d/%m/%Y").date()
+    except:
+        return None
+
+def criar_usuarios_completos(engine, usuario_payload, alunos_map=None, professores_map=None, funcionarios_map=None):
+    """
+    Insere/atualiza um registro em academico.usuario.
+    - usuario_payload: dict com nome,email,senha(hasheada),role
+    - alunos_map/professores_map/funcionarios_map: mapping email->id retornado por upsert_data
+    Retorna id do usuario criado/atualizado.
+    """
+    alunos_map = alunos_map or {}
+    professores_map = professores_map or {}
+    funcionarios_map = funcionarios_map or {}
+
+    schema = "academico"
+    table = "usuario"
+    email = usuario_payload["email"]
+
+    # Somente as FKs que existem no schema atual
+    id_aluno = alunos_map.get(email)
+    id_professor = professores_map.get(email)
+    # NÃO usar id_funcionario: coluna não existe no schema
+
+    payload = {
+        "nome": usuario_payload.get("nome"),
+        "email": email,
+        "senha": usuario_payload.get("senha"),  # já hasheada
+        "role": usuario_payload.get("role"),
+        "id_aluno": id_aluno,
+        "id_professor": id_professor
+    }
+
+    # Remover chaves None para não inserir colunas desnecessárias
+    insert_keys = [k for k, v in payload.items() if v is not None]
+    insert_cols = ", ".join(insert_keys)
+    insert_vals = ", ".join(":" + k for k in insert_keys)
+    set_clause = ", ".join(f"{k}=excluded.{k}" for k in insert_keys if k != "email")
+
+    sql = text(f"""
+        INSERT INTO {schema}.{table} ({insert_cols})
+        VALUES ({insert_vals})
+        ON CONFLICT (email) DO UPDATE
+        SET {set_clause}
+        RETURNING id
+    """)
+
     with engine.begin() as conn:
-        for udata in usuarios_data:
-            # Preparar UPSERT
-            set_mapping = {
-                col.name: insert(usuario).excluded.get(col.name)
-                for col in usuario.columns
-                if col.primary_key is False and col.name != 'email'
-            }
-
-            stmt = insert(usuario).values(**udata).on_conflict_do_update(
-                index_elements=['email'],  # usa email como chave de conflito
-                set_=set_mapping
-            )
-
-            conn.execute(stmt)
-
-    print(f"✅ {len(usuarios_data)} usuário(s) Admin/Professor criados ou atualizados com sucesso.")
-
-
-
-
-
-
-
-
-def criar_usuarios_completos(engine, alunos=[], professores=[], funcionarios=[]):
-    """
-    Cria alunos, professores e funcionários no banco com seus respectivos usuários.
-
-    Args:
-        engine: SQLAlchemy Engine
-        alunos: lista de dicts com dados do aluno
-            - nome_completo, email, telefone, data_nascimento, status_ativo, data_cadastro
-        professores: lista de dicts com dados do professor
-            - nome, email
-        funcionarios: lista de dicts com dados do funcionário
-            - nome, email, role ('Admin' ou outro)
-    """
-    def filtrar_dados_para_tabela(data_dict, tabela):
-        """Filtra apenas os campos que existem na tabela"""
-        return {k: v for k, v in data_dict.items() if k in tabela.c.keys()}
-
-    with engine.begin() as conn:
-        # --- Inserir alunos e usuários ---
-        if alunos:
-            for a in alunos:
-                aluno_data = filtrar_dados_para_tabela({k: v for k, v in a.items() if k != "id_aluno"}, aluno)
-                stmt_aluno = insert(aluno).values(**aluno_data).returning(aluno.c.id_aluno)
-                id_aluno = conn.execute(stmt_aluno).scalar()
-            usuario_data = filtrar_dados_para_tabela({
-                "nome": a.get("nome_completo", a["nome"]),
-                "email": a["email"],
-                "senha": a.get("senha", "senha123"),
-                "role": "Aluno",
-                "id_aluno": id_aluno,
-                "id_professor": None
-            }, usuario)
-
-            set_mapping = {col.name: insert(usuario).excluded.get(col.name)
-                           for col in usuario.columns if col.primary_key is False and col.name != "email"}
-            stmt_usuario = insert(usuario).values(**usuario_data).on_conflict_do_update(
-                index_elements=["email"],
-                set_=set_mapping
-            )
-            conn.execute(stmt_usuario)
-
-        # --- Inserir professores e usuários ---
-        elif professores:
-            for p in professores:
-                professor_data = filtrar_dados_para_tabela({k: v for k, v in p.items() if k != "id_professor"}, professor)
-                stmt_prof = insert(professor).values(**professor_data).returning(professor.c.id_professor)
-                id_prof = conn.execute(stmt_prof).scalar()
-            usuario_data = filtrar_dados_para_tabela({
-                "nome": p.get("nome_usuario", p["nome"]),
-                "email": p["email"],
-                "senha": p.get("senha", "senha123"),
-                "role": "Professor",
-                "id_aluno": None,
-                "id_professor": id_prof
-            }, usuario)
-
-            set_mapping = {col.name: insert(usuario).excluded.get(col.name)
-                           for col in usuario.columns if col.primary_key is False and col.name != "email"}
-            stmt_usuario = insert(usuario).values(**usuario_data).on_conflict_do_update(
-                index_elements=["email"],
-                set_=set_mapping
-            )
-            conn.execute(stmt_usuario)
-
-        # --- Inserir funcionários/admins ---
-        elif funcionarios:
-            for f in funcionarios:
-                funcionario_data = filtrar_dados_para_tabela({k: v for k, v in f.items() if k != "id_funcionario"}, funcionario)
-                stmt_func = insert(funcionario).values(**funcionario_data).returning(funcionario.c.id_funcionario)
-                id_func = conn.execute(stmt_func).scalar()
-
-            usuario_data = filtrar_dados_para_tabela({
-                "nome": f.get("nome_usuario", f["nome"]),
-                "email": f["email"],
-                "senha": f.get("senha", "senha123"),
-                "role": f.get("role", "Admin"),
-                "id_aluno": None,
-                "id_professor": None
-            }, usuario)
-            set_mapping = {col.name: insert(usuario).excluded.get(col.name)
-                        for col in usuario.columns if col.primary_key is False and col.name != "email"}
-            stmt_usuario = insert(usuario).values(**usuario_data).on_conflict_do_update(
-                index_elements=["email"],
-                set_=set_mapping
-            )
-            conn.execute(stmt_usuario)
-
-    print("✅ Todos os usuários (alunos, professores e funcionários/admins) foram criados/atualizados com sucesso.")
+        new_id = conn.execute(sql, payload).scalar_one()
+        return new_id

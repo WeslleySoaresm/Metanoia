@@ -10,7 +10,6 @@ import json
 from db.upsert import *
 
 
-
 #conectando ao banco de dados
 engine = get_db_engine(db_config)
 
@@ -79,3 +78,6 @@ print(tabulate(Alunos, headers="keys", tablefmt="psql"))
 lista_ids_de_alunos = input(f"Digite o Ids dos alunos a serem deletados, separados por vírgula: ") # IDs dos alunos a serem deletados    
 lista_ids_de_alunos = [int(id.strip()) for id in lista_ids_de_alunos.split(",")] # Converte a entrada em uma lista de inteiros
 deletar_aluno_e_dependencias(engine, lista_ids_de_alunos)
+
+
+
