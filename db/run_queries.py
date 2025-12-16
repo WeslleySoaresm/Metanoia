@@ -324,3 +324,19 @@ def deletar_aluno_e_dependencias(engine, ids_alunos: list):
 
     except Exception as e:
         print(f"❌ ERRO GRAVE. Transação desfeita (ROLLBACK): {e}")
+        
+        
+def consulta_inner_join(engine):
+    sql = """
+        SELECT 
+            a.id AS aluno_id,
+            a.nome_completo,
+            t.nome_turma,
+            t.ano,
+            t.semestre
+        FROM academico.aluno a
+        INNER JOIN academico.inscricao i ON i.xid_aluno = a.id
+        INNER JOIN academico.turma t ON t.id = i.xid_turma;
+    """
+    with engine.connect() as conn:
+        return conn.execute(text(sql)).fetchall()       

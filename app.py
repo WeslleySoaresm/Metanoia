@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 from db.config import get_db_engine, db_config
-from db.run_queries import fetch_table_data, deletar_aluno_e_dependencias, upsert_table_data
+from db.run_queries import fetch_table_data, deletar_aluno_e_dependencias, upsert_table_data, consulta_inner_join
 from db.upsert import *
 import streamlit as st
 from pages.navbar import *
@@ -120,6 +120,9 @@ tabelas_map = {
     "Funcionário": "academico.funcionario",
     "Professor Disciplina": "academico.professor_disciplina",
     "Tarefa Auxiliar": "academico.tarefa_auxiliar",
+    "Alunos que têm Inscrição": "academico.vw_alunos_com_inscricao",
+    "Alunos com 2 ou mais inscrições": "academico.vw_alunos_multiplas_turmas",
+    "Alunos Pendente (Pagamento)": "academico.vw_alunos_pendentes_pagamento"
 }
 
 tabelas_nomes = list(tabelas_map.keys())
@@ -197,69 +200,91 @@ if selected == "Consultas":
     escolha =  tabelas_map[escolha_nome]
     df = pd.DataFrame(fetch_table_data(escolha))
     st.dataframe(df)
-    
+   
     
 
 elif selected == "Cadastrar Aluno":
     st.header("➕ Cadastrar Aluno")
+
+    # Campos do formulário
     id_aluno = st.number_input("ID do Aluno (deixe 0 para novo)", min_value=0, value=0)
     nome_completo = st.text_input("Nome do Aluno")
-    senha = st.text_input("Senha", type="password")
-    role = "aluno"
     email = st.text_input("Email do Aluno")
     telefone = st.text_input("Telefone do Aluno")
     data_nascimento = st.text_input("Data de Nascimento (DD/MM/AAAA)")
     status_ativo = st.selectbox("Status do Aluno", ["Ativo", "Inativo"])
     data_cadastro = st.text_input("Data de Cadastro (DD/MM/AAAA)")
+    
+
+    # ✅ SENHA — apenas uma vez, oculta
+    senha = st.text_input("Senha", type="password", key="senha_aluno")
 
     if st.button("Salvar Aluno"):
-        # Validações defensivas
+
+        # ============================
+        # ✅ Validações defensivas
+        # ============================
         if not nome_completo:
             st.error("Nome do aluno é obrigatório.")
             st.stop()
+
         if not email:
             st.error("Email é obrigatório.")
             st.stop()
+
         if not senha:
             st.error("Senha é obrigatória.")
             st.stop()
 
-        # Gera hash da senha aqui, na camada de aplicação
+        # ============================
+        # ✅ Hash seguro da senha
+        # ============================
         try:
-            senha_hash = hash_password(senha)  # bcrypt, rounds controlado no utilitário
+            senha_hash = hash_password(senha)  # bcrypt
         except Exception as e:
             st.error(f"Erro ao gerar hash da senha: {e}")
             st.stop()
 
-        # Monta payloads
+        # ============================
+        # ✅ Conversão de datas
+        # ============================
+        data_nasc = parse_date_br(data_nascimento)
+        data_cad = parse_date_br(data_cadastro)
+
+        # ============================
+        # ✅ Payloads para persistência
+        # ============================
         dados_aluno = {
-            "id": None,
+            "id": None if id_aluno == 0 else id_aluno,
             "nome_completo": nome_completo,
             "email": email,
             "telefone": telefone,
-            "data_nascimento": data_nascimento,
+            "data_nascimento": data_nasc,
             "status_ativo": True if status_ativo == "Ativo" else False,
-            "data_cadastro": data_cadastro
+            "data_cadastro": data_cad,
+           
         }
 
         dados_usuario = {
             "nome": nome_completo,
             "email": email,
-            "senha": senha_hash,  # **hash** aqui
+            "senha": senha_hash,  # hash bcrypt
             "role": "aluno"
         }
 
-        # Chamar função de persistência no modo seguro (esperando hash)
+        # ============================
+        # ✅ Persistência segura
+        # ============================
         try:
             create_aluno_e_usuario(engine, dados_aluno, dados_usuario)
+            st.success("✅ Aluno inserido/atualizado com sucesso!")
+
         except ValueError as ve:
-            # Mensagem clara para desenvolvedor/operador
             st.error(f"Erro ao salvar: {ve}")
+
         except Exception as exc:
-            st.error("Erro inesperado ao salvar aluno. Verifique logs.")
-            # log exc em servidor
-        else:
-            st.success("Aluno inserido/atualizado com sucesso!")
+            st.error("❌ Erro inesperado ao salvar aluno. Verifique logs.")
+            print(exc)
 # --- Cadastro de Curso ---
 elif selected == "Cadastrar Curso":
     st.header("➕ Inserir/Atualizar Curso")
@@ -401,6 +426,7 @@ elif selected == "Cadastrar Usuário":
         data_nascimento = st.text_input("Data de Nascimento (DD/MM/AAAA)")
         status_ativo = st.selectbox("Status do Aluno", ["Ativo", "Inativo"])
         data_cadastro = st.text_input("Data de Cadastro (DD/MM/AAAA)")
+        senha = st.text_input("Senha", type="password", key="senha_aluno")
 
     elif role == "Professor":
         id_professor = st.number_input("ID do Professor (se aplicável)", min_value=0, value=0)

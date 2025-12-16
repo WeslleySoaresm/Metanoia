@@ -308,23 +308,25 @@ def parse_date_br(value):
     Converte datas no formato 'DD/MM/AAAA' para datetime.date.
     Retorna None se a string estiver vazia, inválida ou None.
     """
-    if not value or not isinstance(value, str):
-        return None
+   
+    if isinstance(value, date):
+        return value
 
-    value = value.strip()
+        if not value or not isinstance(value, str):
+            return None
 
-    # Aceita também 'AAAA-MM-DD' (caso venha do banco ou de outro fluxo)
-    try:
-        if "-" in value and len(value.split("-")[0]) == 4:
-            return datetime.strptime(value, "%Y-%m-%d").date()
-    except:
-        pass
+        value = value.strip()
 
-    # Formato padrão BR
-    try:
-        return datetime.strptime(value, "%d/%m/%Y").date()
-    except:
-        return None
+        try:
+            if "-" in value and len(value.split("-")[0]) == 4:
+                return datetime.strptime(value, "%Y-%m-%d").date()
+        except:
+            pass
+
+        try:
+            return datetime.strptime(value, "%d/%m/%Y").date()
+        except:
+            return None
 
 def criar_usuarios_completos(engine, usuario_payload, alunos_map=None, professores_map=None, funcionarios_map=None):
     """
