@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import text
 from db.config import get_db_engine, db_config
-from db.run_queries import fetch_table_data, deletar_aluno_e_dependencias, upsert_table_data, consulta_inner_join
+from db.run_queries import fetch_table_data, deletar_aluno_e_dependencias, upsert_table_data, consulta_inner_join, buscar_tarefas_por_aluno
 from db.upsert import *
 import streamlit as st
 from pages.navbar import *
@@ -144,54 +144,54 @@ if selected == "Página Inicial":
     # ============================
     #  CARROSSEL DE CARDS
     # ============================
+    if st.session_state.role == "admin":
+        cards = [
+            {
+                "titulo": "Gerenciar Alunos",
+                "img": "https://images.pexels.com/photos/3184328/pexels-photo-3184328.jpeg",
+                "desc": "Cadastre, edite e visualize informações dos alunos.",
+                "rodape": "Acesso rápido ao módulo de alunos",
+                "link": "/?page=alunos"
+            },
+            {
+                "titulo": "Professores",
+                "img": "https://images.pexels.com/photos/5212345/pexels-photo-5212345.jpeg",
+                "desc": "Controle de professores, disciplinas e horários.",
+                "rodape": "Gestão acadêmica",
+                "link": "/?page=professores"
+            },
+            {
+                "titulo": "Funcionários",
+                "img": "https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg",
+                "desc": "Gerencie cargos, permissões e dados administrativos.",
+                "rodape": "Administração interna",
+                "link": "/?page=funcionarios"
+            },
+            {
+                "titulo": "Relatórios",
+                "img": "https://images.pexels.com/photos/669615/pexels-photo-669615.jpeg",
+                "desc": "Acompanhe métricas, desempenho e indicadores.",
+                "rodape": "Visão estratégica",
+                "link": "/?page=relatorios"
+            }
+        ]
 
-    cards = [
-        {
-            "titulo": "Gerenciar Alunos",
-            "img": "https://images.pexels.com/photos/3184328/pexels-photo-3184328.jpeg",
-            "desc": "Cadastre, edite e visualize informações dos alunos.",
-            "rodape": "Acesso rápido ao módulo de alunos",
-            "link": "/?page=alunos"
-        },
-        {
-            "titulo": "Professores",
-            "img": "https://images.pexels.com/photos/5212345/pexels-photo-5212345.jpeg",
-            "desc": "Controle de professores, disciplinas e horários.",
-            "rodape": "Gestão acadêmica",
-            "link": "/?page=professores"
-        },
-        {
-            "titulo": "Funcionários",
-            "img": "https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg",
-            "desc": "Gerencie cargos, permissões e dados administrativos.",
-            "rodape": "Administração interna",
-            "link": "/?page=funcionarios"
-        },
-        {
-            "titulo": "Relatórios",
-            "img": "https://images.pexels.com/photos/669615/pexels-photo-669615.jpeg",
-            "desc": "Acompanhe métricas, desempenho e indicadores.",
-            "rodape": "Visão estratégica",
-            "link": "/?page=relatorios"
-        }
-    ]
+        # Renderiza o carrossel
+        st.markdown("<div class='carousel-container'>", unsafe_allow_html=True)
 
-    # Renderiza o carrossel
-    st.markdown("<div class='carousel-container'>", unsafe_allow_html=True)
+        for card in cards:
+            st.markdown(f"""
+                <a href="{card['link']}" class="carousel-link">
+                    <div class="carousel-item">
+                        <img src="{card['img']}">
+                        <div class="carousel-title">{card['titulo']}</div>
+                        <div class="carousel-desc">{card['desc']}</div>
+                        <div class="carousel-footer">{card['rodape']}</div>
+                    </div>
+                </a>
+            """, unsafe_allow_html=True)
 
-    for card in cards:
-        st.markdown(f"""
-            <a href="{card['link']}" class="carousel-link">
-                <div class="carousel-item">
-                    <img src="{card['img']}">
-                    <div class="carousel-title">{card['titulo']}</div>
-                    <div class="carousel-desc">{card['desc']}</div>
-                    <div class="carousel-footer">{card['rodape']}</div>
-                </div>
-            </a>
-        """, unsafe_allow_html=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # --- Consultas ---
 if selected == "Consultas":
@@ -336,7 +336,26 @@ elif selected == "Cadastrar Tarefa Escolar":
             })
         st.success("Tarefa escolar cadastrada com sucesso!")
 
+# ------------------------------
+# MINHAS TAREFAS
+# ------------------------------
+if selected == "Minhas Tarefas":
+    st.header("📋 Minhas Tarefas")
+    st.write("Session state:", st.session_state)
+    id_aluno = st.session_state.pessoa_id # Ex: weslley@metanoia.com
+    tarefas = buscar_tarefas_por_aluno(id_aluno)
 
+    if not tarefas:
+        st.info("Nenhuma tarefa atribuída.")
+    else:
+        for tarefa in tarefas:
+            st.markdown(f"""
+                <div style="background-color:black; padding:15px; border-radius:8px; margin-bottom:10px;">
+                    <h4 style="color:#007BFF;">{tarefa['titulo']}</h4>
+                    <p>{tarefa['descricao']}</p>
+                    <p><strong>Status:</strong> {tarefa['status'].capitalize()}</p>
+                </div>
+            """, unsafe_allow_html=True)
 # --- Deletar Usuario ---
 elif selected == "Deletar Usuario":
     st.header("❌ Deletar Registros de Tabela")
@@ -523,48 +542,170 @@ elif selected == "Cadastrar Usuário":
         except Exception as e:
             st.error(f"❌ Ocorreu um erro inesperado: {str(e)}")
 
-
-# --- Vídeos Aulas ---
 elif selected == "Vídeos Aulas":
-    st.header("🎥 Vídeos Aulas")
+
+    # Título principal
     st.markdown("""
-    Aqui você pode acessar vídeos aulas relacionados ao conteúdo acadêmico.
-    
-    **Em breve mais conteúdos serão adicionados!**
-    """
+        <div style="text-align:center;">
+            <h1 style="color:#007BFF; font-size:36px;">Vídeos Aulas</h1>
+            <p style="font-size:18px;">Aqui você pode acessar vídeos aulas relacionados ao conteúdo acadêmico.</p>
+            <p><em>Em breve mais conteúdos serão adicionados!</em></p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ✅ CSS para estilizar o dropdown
+    st.markdown("""
+        <style>
+
+        /* Centraliza o container do dropdown */
+        .dropdown-center {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100vw;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+
+        /* Estiliza o selectbox */
+        div[data-baseweb="select"] > div {
+            background-color: #cce5ff !important;   /* azul bebê */
+            border-radius: 10px !important;
+            border: 0.6px solid #007BFF !important;
+            font-size: 20px !important;             /* letras grandes */
+            font-weight: 700 !important;            /* letras grossas */
+            color: #003366 !important;              /* azul escuro */
+            text-align: center !important;
+            min-height: 55px !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Hover azul escuro */
+        div[data-baseweb="select"] > div:hover {
+            background-color: #99ccff !important;
+            border-color: #0056b3 !important;
+        }
+
+        /* Estiliza o texto das opções */
+        .css-1n7v3ny-option {
+            font-size: 18px !important;
+            font-weight: 600 !important;
+            text-align: center !important;
+        }
+
+        </style>
+    """, unsafe_allow_html=True)
+
+    # ✅ Dropdown centralizado
+    st.markdown('<div class="dropdown-center">', unsafe_allow_html=True)
+    aulas_tema = st.selectbox(
+        "📘 Selecione a Disciplina",
+        ["Bibliologia", "Pentateuco", "Teontologia"],
+        key="disciplina"
     )
-    aulas_tema = st.sidebar.selectbox("Selecione Disciplina", ["Bibliologia", "Pentateuco", "Teontologia"])
-    
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Estilo dos botões padrão
+    button_style = """
+        background-color:#007BFF;
+        color:white;
+        padding:12px 24px;
+        font-size:16px;
+        border:none;
+        border-radius:8px;
+        margin:10px;
+        cursor:pointer;
+    """
+
+    # ------------------------------
+    # BIBLIOLOGIA
+    # ------------------------------
     if aulas_tema == "Bibliologia":
-        st.subheader("📚 Bibliologia")
-        st.markdown("Vídeo aula sobre os livros da Bíblia e sua importância.")
-        
-        selected = "Vídeos Aulas"
-        AO_VIVO = "https://metanoia.com/aulas-ao-vivo"
-        AULAS_GRAVADAS = "https://metanoia.com/aulas-gravadas"
-        button_ao_vivo = st.button("Assistir Aula AO VIVO")
-        button_voltar =  "Vídeos Aulas"
-        button_aulas_gravadas = st.button("Assistir Aula AULAS GRAVADAS")
-        
-        if button_ao_vivo:
-            
-            link_video_1 = "https://drive.google.com/file/d/1z1Yk2bXKJfX1Z4nU5r8q3F5G7H6I9J0K/view?usp=drive_link"
-            st.header("Assista Aula AO VIVO ")
-            st.markdown(f"[Clique aqui para assistir ao vivo]({link_video_1})")
-            
-            if  st.button(f"Voltar"):
-                    selected = "Vídeos Aulas"          
-        elif button_aulas_gravadas:
-            
-            link_video_1 = "https://drive.google.com/file/d/10R9qGZzA6L2QqBiN_koUaO3e2pSQYaIe/view?usp=drive_link"
-            st.header("Assista Aula Gravada")
-            st.markdown(f"[AULA 2]({link_video_1})")
-            
-            if  st.button(f"Voltar"):
-                    selected = "Vídeos Aulas"
-                    
-   
-        
+
+        st.markdown("""
+            <div style="text-align:center; margin-top:30px;">
+                <h2 style="color:#007BFF; font-size:28px;">Bibliologia</h2>
+                <p style="font-size:16px;">Vídeo aula sobre os livros da Bíblia e sua importância.</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # ------------------------------
+        # BOTÕES AO VIVO / GRAVADAS CENTRALIZADOS
+        # ------------------------------
+        col_esq, col1, col2, col_dir = st.columns([1, 2, 2, 1])
+
+        with col1:
+            ao_vivo = st.button("▶ Aula AO VIVO", use_container_width=True)
+
+        with col2:
+            gravadas = st.button("📼 Aulas Gravadas", use_container_width=True)
+
+        # ------------------------------
+        # AULA AO VIVO
+        # ------------------------------
+        if ao_vivo:
+            st.markdown(f"""
+                <div style="text-align:center; margin-top:20px;">
+                    <h3 style="color:#007BFF;">🔴 Aula AO VIVO</h3>
+                    <a href="https://drive.google.com/file/d/1z1Yk2bXKJfX1Z4nU5r8q3F5G7H6I9J0K/view?usp=drive_link" target="_blank">
+                        <button style="{button_style}">Assistir Agora</button>
+                    </a>
+                </div>
+            """, unsafe_allow_html=True)
+
+        # ------------------------------
+        # AULAS GRAVADAS (submenu)
+        # ------------------------------
+        if gravadas:
+
+            st.markdown("""
+                <div style="text-align:center; margin-top:20px;">
+                    <h3 style="color:#007BFF;">Aulas Gravadas</h3>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # ✅ CSS DOS BOTÕES GRANDES (AZUL BEBÊ + HOVER AZUL ESCURO)
+            st.markdown("""
+                <style>
+                .botao-aula {
+                    width: 60%;
+                    margin: 12px auto;
+                    padding: 18px;
+                    background-color: #cce5ff;
+                    color: #003366;
+                    font-size: 20px;
+                    font-weight: 700;
+                    text-align: center;
+                    border: none;
+                    border-radius: 10px;
+                    cursor: pointer;
+                    transition: 0.3s;
+                    display: block;
+                }
+
+                .botao-aula:hover {
+                    background-color: #0056b3;
+                    color: white;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+
+            # ✅ LISTA DAS AULAS
+            aulas_gravadas = {
+                "Aula 01": "https://drive.google.com/file/d/10R9qGZzA6L2QqBiN_koUaO3e2pSQYaIe/view?usp=drive_link",
+                "Aula 02": "https://drive.google.com/file/d/1abcDEFgHIJkLmNopQRstuVWxyz/view?usp=drive_link",
+                "Aula 03": "https://drive.google.com/file/d/1xyzABCdefGHIjklMNopQRstuVW/view?usp=drive_link"
+            }
+
+            # ✅ BOTÕES GRANDES, CENTRALIZADOS, UM EMBAIXO DO OUTRO
+            for nome, link in aulas_gravadas.items():
+                st.markdown(f"""
+                    <a href="{link}" target="_blank">
+                        <button class="botao-aula">{nome}</button>
+                    </a>
+                """, unsafe_allow_html=True)
 #--- Sobre ---
 elif selected == "Sobre":
     st.header("ℹ️ Sobre o Painel Acadêmico")

@@ -340,3 +340,29 @@ def consulta_inner_join(engine):
     """
     with engine.connect() as conn:
         return conn.execute(text(sql)).fetchall()       
+    
+    
+    
+
+
+
+def buscar_tarefas_por_aluno(id_aluno: int):
+    query = """
+        SELECT id, titulo, descricao, status
+        FROM academico.tarefa_escolar
+        WHERE xid_aluno = :id_aluno
+        ORDER BY id DESC
+    """
+
+    with engine.connect() as conn:
+        result = conn.execute(text(query), {"id_aluno": id_aluno}).fetchall()
+
+    return [
+        {
+            "id": r[0],
+            "titulo": r[1],
+            "descricao": r[2],
+            "status": r[3]
+        }
+        for r in result
+    ]

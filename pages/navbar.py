@@ -6,22 +6,36 @@ def get_menu_por_role(role):
     """Retorna opções de menu baseado na role do usuário"""
     
     menus_base = {
-        "admin": {
-            "opcoes": ["Página Inicial", "Consultas", "Cadastrar Aluno", "Cadastrar Curso", 
-                      "Cadastrar Usuário", "Cadastrar Material", "Cadastrar Tarefa Escolar", 
-                      "Deletar Usuario", "Sobre", "Ajuda"],
-            "icons": ["house", "search", "person-plus", "book", "users", "box", 
-                     "clipboard", "trash", "info-circle", "question-circle"]
-        },
-        "professor": {
-            "opcoes": ["Página Inicial", "Cadastrar Tarefa Escolar", "Sobre", "Ajuda"],
-            "icons": ["house", "clipboard", "info-circle", "question-circle"]
-        },
-        "aluno": {
-            "opcoes": ["Página Inicial", "Minhas Tarefas", "Sobre", "Ajuda"],
-            "icons": ["house", "clipboard-check", "info-circle", "question-circle"]
-        }
+    "admin": {
+        "opcoes": [
+            "Página Inicial", "Consultas", "Cadastrar Aluno", "Cadastrar Curso",
+            "Cadastrar Usuário", "Cadastrar Material", "Cadastrar Tarefa Escolar",
+            "Vídeos Aulas", "Deletar Usuario", "Sobre", "Ajuda"
+        ],
+        "icons": [
+            "house", "search", "person-plus", "book", "users", "box",
+            "clipboard", "camera-video", "trash", "info-circle", "question-circle"
+        ]
+    },
+
+    "professor": {
+        "opcoes": [
+            "Página Inicial", "Cadastrar Tarefa Escolar", "Vídeos Aulas", "Minhas Tarefas", "Sobre", "Ajuda"
+        ],
+        "icons": [
+            "house", "clipboard", "camera-video", "clipboard-check", "info-circle", "question-circle"
+        ]
+    },
+
+    "aluno": {
+        "opcoes": [
+            "Página Inicial", "Minhas Tarefas", "Vídeos Aulas", "Sobre", "Ajuda"
+        ],
+        "icons": [
+            "house", "clipboard-check", "camera-video", "info-circle", "question-circle"
+        ]
     }
+}
     
     return menus_base.get(role, menus_base["aluno"])
 
