@@ -341,7 +341,7 @@ elif selected == "Cadastrar Tarefa Escolar":
 # ------------------------------
 if selected == "Minhas Tarefas":
     st.header("📋 Minhas Tarefas")
-    st.write("Session state:", st.session_state)
+
     id_aluno = st.session_state.pessoa_id # Ex: weslley@metanoia.com
     tarefas = buscar_tarefas_por_aluno(id_aluno)
 
